@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DBD Lore Database</title>
+    <style>
+        body {
+            background-color: #121212;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 { color: #c62828; text-align: center; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 20px;}
+        
+        .controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .nav-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .nav-btn, select {
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+            border: 2px solid #333;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+        select { text-transform: none; cursor: pointer; outline: none; }
+        .nav-btn:hover, select:hover { border-color: #c62828; }
+        .nav-btn.active {
+            background-color: #c62828;
+            border-color: #c62828;
+            color: #fff;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .card {
+            background-color: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            transition: transform 0.2s;
+        }
+        .card:hover { transform: scale(1.02); border-color: #c62828; }
+        .card h2 { margin-top: 0; color: #fff; font-size: 1.2rem; border-bottom: 1px solid #333; padding-bottom: 10px; }
+        .pregame { color: #888; font-style: italic; font-size: 0.9rem; margin-bottom: 15px; }
+        .stat { margin-bottom: 8px; display: flex; justify-content: space-between; align-items: flex-start;}
+        .stat-label { color: #aaa; flex-shrink: 0; margin-right: 15px;}
+        .stat-value { font-weight: bold; color: #fff; text-align: right; }
+        .perks-list { color: #d4af37; font-size: 0.85rem; font-weight: normal; } 
+    </style>
+</head>
+<body>
+    <h1>Dead by Daylight — Lore Database</h1>
+    
+    <div class="controls">
+        <div class="nav-buttons">
+            <button class="nav-btn" onclick="changeTable('chapters', this)">Chapters</button>
+            <button class="nav-btn" onclick="changeTable('killers', this)">Killers</button>
+            <button class="nav-btn" onclick="changeTable('survivors', this)">Survivors</button>
+        </div>
+        
+        <select id="sort-select" onchange="toggleSort()">
+            <option value="chapter_asc">Sort: Chronological (Default)</option>
+            <option value="alpha_asc">Sort: Alphabetical (A-Z)</option>
+        </select>
+    </div>
+
+    <div class="grid" id="data-container">
+        <p style="text-align: center; width: 100%;">Loading data...</p>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://anfvpewaqtkspdqjofos.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_9N0ZCFNwGweGTl5zbks8fQ_uCorWVGZ';
+
+        let currentTable = 'chapters';
+        let currentSort = 'chapter_asc';
+        let rawData = []; 
+
+        async function changeTable(tableName, btnElement) {
+            currentTable = tableName;
+            document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+            btnElement.classList.add('active');
+
+            const container = document.getElementById('data-container');
+            container.innerHTML = '<p style="text-align: center; width: 100%;">Loading...</p>';
+
+            try {
+                let url = `${SUPABASE_URL}/rest/v1/${tableName}?select=*&apikey=${SUPABASE_ANON_KEY}`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Network response was not ok');
+                rawData = await response.json();
+
+                if (tableName === 'killers') {
+                    const perksRes = await fetch(`${SUPABASE_URL}/rest/v1/killer_perks?select=*&apikey=${SUPABASE_ANON_KEY}`);
+                    const allPerks = await perksRes.json();
+                    
+                    rawData.forEach(killer => {
+                        killer.my_perks = allPerks
+                            .filter(p => p.klr_name === killer.klr_name)
+                            .map(p => p.perk_name);
+                    });
+                } else if (tableName === 'survivors') {
+                    const perksRes = await fetch(`${SUPABASE_URL}/rest/v1/survivor_perks?select=*&apikey=${SUPABASE_ANON_KEY}`);
+                    const allPerks = await perksRes.json();
+                    
+                    rawData.forEach(survivor => {
+                        survivor.my_perks = allPerks
+                            .filter(p => p.surv_name === survivor.surv_name)
+                            .map(p => p.perk_name);
+                    });
+                } else if (tableName === 'chapters') {
+                    const [killersRes, survivorsRes] = await Promise.all([
+                        fetch(`${SUPABASE_URL}/rest/v1/killers?select=klr_name,klr_chapter&apikey=${SUPABASE_ANON_KEY}`),
+                        fetch(`${SUPABASE_URL}/rest/v1/survivors?select=surv_name,surv_chapter&apikey=${SUPABASE_ANON_KEY}`)
+                    ]);
+                    const allKillers = await killersRes.json();
+                    const allSurvivors = await survivorsRes.json();
+                    
+                    rawData.forEach(chapter => {
+                        chapter.killers_in_chapter = allKillers.filter(k => k.klr_chapter === chapter.chapter).map(k => k.klr_name);
+                        chapter.survivors_in_chapter = allSurvivors.filter(s => s.surv_chapter === chapter.chapter).map(s => s.surv_name);
+                    });
+                }
+
+                applySortAndRender();
+            } catch (error) {
+                console.error("Ошибка:", error);
+                container.innerHTML = `<p style="color: red; text-align: center; width: 100%;">Error: ${error.message}</p>`;
+            }
+        }
+
+        function toggleSort() {
+            currentSort = document.getElementById('sort-select').value;
+            applySortAndRender();
+        }
+
+        function applySortAndRender() {
+            let sortedData = [...rawData]; 
+
+            if (currentSort === 'alpha_asc') {
+                sortedData.sort((a, b) => {
+                    let nameA = currentTable === 'killers' ? a.klr_name : (currentTable === 'survivors' ? a.surv_name : a.chapter_title);
+                    let nameB = currentTable === 'killers' ? b.klr_name : (currentTable === 'survivors' ? b.surv_name : b.chapter_title);
+                    return nameA.localeCompare(nameB);
+                });
+            } else {
+                sortedData.sort((a, b) => {
+                    let chapA = currentTable === 'killers' ? a.klr_chapter : (currentTable === 'survivors' ? a.surv_chapter : a.chapter);
+                    let chapB = currentTable === 'killers' ? b.klr_chapter : (currentTable === 'survivors' ? b.surv_chapter : b.chapter);
+                    return chapA - chapB;
+                });
+            }
+
+            renderCards(sortedData, currentTable);
+        }
+
+        function renderCards(data, tableName) {
+            const container = document.getElementById('data-container');
+            container.innerHTML = '';
+
+            if (data.length === 0) {
+                container.innerHTML = '<p style="text-align: center; width: 100%;">No data found.</p>';
+                return;
+            }
+
+            data.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                
+                if (tableName === 'killers') {
+                    const pregameName = item.klr_pregame_name ? item.klr_pregame_name : '';
+                    
+                    let perksHtml = '';
+                    if (item.my_perks && item.my_perks.length > 0) {
+                        const perks = item.my_perks.sort().join(', ');
+                        perksHtml = `<div class="stat"><span class="stat-label">Perks:</span> <span class="stat-value perks-list">${perks}</span></div>`;
+                    }
+
+                    card.innerHTML = `
+                        <h2>${item.klr_name}</h2>
+                        <div class="pregame">${pregameName}</div>
+                        <div class="stat"><span class="stat-label">Chapter:</span> <span class="stat-value">${item.klr_chapter}</span></div>
+                        <div class="stat"><span class="stat-label">Power:</span> <span class="stat-value">${item.klr_power}</span></div>
+                        <div class="stat"><span class="stat-label">Speed:</span> <span class="stat-value">${item.klr_speed} m/s</span></div>
+                        <div class="stat"><span class="stat-label">Terror radius:</span> <span class="stat-value">${item.klr_terror_radius} m</span></div>
+                        ${perksHtml}
+                    `;
+                } else if (tableName === 'survivors') {
+                    let perksHtml = '';
+                    if (item.my_perks && item.my_perks.length > 0) {
+                        const perks = item.my_perks.sort().join(', ');
+                        perksHtml = `<div class="stat"><span class="stat-label">Perks:</span> <span class="stat-value perks-list">${perks}</span></div>`;
+                    }
+
+                    card.innerHTML = `
+                        <h2>${item.surv_name}</h2>
+                        <div class="stat"><span class="stat-label">Chapter:</span> <span class="stat-value">${item.surv_chapter}</span></div>
+                        ${perksHtml}
+                    `;
+                } else if (tableName === 'chapters') {
+                    let killersHtml = '';
+                    if (item.killers_in_chapter && item.killers_in_chapter.length > 0) {
+                        killersHtml = `<div class="stat"><span class="stat-label">Killer(s):</span> <span class="stat-value">${item.killers_in_chapter.join(', ')}</span></div>`;
+                    }
+                    
+                    let survivorsHtml = '';
+                    if (item.survivors_in_chapter && item.survivors_in_chapter.length > 0) {
+                        survivorsHtml = `<div class="stat"><span class="stat-label">Survivor(s):</span> <span class="stat-value">${item.survivors_in_chapter.join(', ')}</span></div>`;
+                    }
+
+                    card.innerHTML = `
+                        <h2>Chapter ${item.chapter}</h2>
+                        <div class="stat"><span class="stat-label">Name:</span> <span class="stat-value">${item.chapter_title}</span></div>
+                        <div class="stat"><span class="stat-label">Release date:</span> <span class="stat-value">${item.release_date || 'Unknown'}</span></div>
+                        ${killersHtml}
+                        ${survivorsHtml}
+                    `;
+                }
+                
+                container.appendChild(card);
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            changeTable('chapters', document.querySelector('.nav-btn'));
+        });
+    </script>
+</body>
+</html>
